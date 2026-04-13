@@ -1,5 +1,54 @@
 # CrossPoint Reader
 
+Firmware for the **Xteink X4** e-paper display reader (unaffiliated with Xteink).
+Built using **PlatformIO** and targeting the **ESP32-C3** microcontroller.
+
+CrossPoint Reader is a purpose-built firmware designed to be a drop-in, fully open-source replacement for the official 
+Xteink firmware. It aims to match or improve upon the standard EPUB reading experience.
+
+![](./docs/images/cover.jpg)
+
+## Motivation
+
+E-paper devices are fantastic for reading, but most commercially available readers are closed systems with limited 
+customisation. The **Xteink X4** is an affordable, e-paper device, however the official firmware remains closed.
+CrossPoint exists partly as a fun side-project and partly to open up the ecosystem and truely unlock the device's
+potential.
+
+CrossPoint Reader aims to:
+* Provide a **fully open-source alternative** to the official firmware.
+* Offer a **document reader** capable of handling EPUB content on constrained hardware.
+* Support **customisable font, layout, and display** options.
+* Run purely on the **Xteink X4 hardware**.
+
+This project is **not affiliated with Xteink**; it's built as a community project.
+
+## Features & Usage
+
+- [x] EPUB parsing and rendering (EPUB 2 and EPUB 3)
+- [x] Image support within EPUB
+- [x] Saved reading position
+- [x] File explorer with file picker
+  - [x] Basic EPUB picker from root directory
+  - [x] Support nested folders
+  - [ ] EPUB picker with cover art
+- [x] Custom sleep screen
+  - [x] Cover sleep screen
+- [x] Wifi book upload
+- [x] Wifi OTA updates
+- [x] KOReader Sync integration for cross-device reading progress
+- [x] Configurable font, layout, and display options
+  - [ ] User provided fonts
+  - [ ] Full UTF support
+- [x] Screen rotation
+
+Multi-language support: Read EPUBs in various languages, including English, Spanish, French, German, Italian, Portuguese, Russian, Ukrainian, Polish, Swedish, Norwegian, [and more](./USER_GUIDE.md#supported-languages).
+
+See [the user guide](./USER_GUIDE.md) for instructions on operating CrossPoint, including the
+[KOReader Sync quick setup](./USER_GUIDE.md#365-koreader-sync-quick-setup).
+
+For more details about the scope of the project, see the [SCOPE.md](SCOPE.md) document.
+
 ## Thai language support
 
 This firmware includes targeted support for reading Thai EPUBs on constrained hardware:
@@ -9,15 +58,7 @@ This firmware includes targeted support for reading Thai EPUBs on constrained ha
 - **EPUB layout** — The HTML parser and `ParsedText` pipeline segment Thai runs and insert layout boundaries so line breaking and justification work without awkward gaps.
 - **Rendering** — Thai combining marks (vowels, tone marks, Sara Am) are positioned and stacked in the glyph renderer; Thai cluster logic supports measurement and breaks.
 
-These components live in the EPUB engine (`lib/Epub/`), hyphenation (`ThaiWordBreaker`), and renderer (`GfxRenderer`). They are distinct from community forks that add separate Thai UI.
-
-
-ขอบคุณโครงการ **CrossPoint Halo 2 (HALO)** ที่ [crosspoint-halo2-custom](https://github.com/kocha01/crosspoint-halo2-custom) โดย [@kocha01](https://github.com/kocha01) สำหรับการขยายประสบการณ์ภาษาไทย
-
-See [the user guide](./USER_GUIDE.md) for instructions on operating CrossPoint, including the
-[KOReader Sync quick setup](./USER_GUIDE.md#365-koreader-sync-quick-setup).
-
-For more details about the scope of the project, see the [SCOPE.md](SCOPE.md) document.
+These components live in the EPUB engine (`lib/Epub/`), hyphenation (`ThaiWordBreaker`), and renderer (`GfxRenderer`). They are distinct from community forks that add separate Thai UI (for example keyboard layouts); see the acknowledgement below.
 
 ## Installing
 
@@ -32,7 +73,7 @@ back to the other partition using the "Swap boot partition" button here https://
 ### Web (specific firmware version)
 
 1. Connect your Xteink X4 to your computer via USB-C
-2. Download the `firmware.bin` file from the release of your choice via the [releases page](https://github.com/teerarattanapon/crosspoint-reader/releases)
+2. Download the `firmware.bin` file from the release of your choice via the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases)
 3. Go to https://xteink.dve.al/ and flash the firmware file using the "OTA fast flash controls" section
 
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap
@@ -56,7 +97,7 @@ See [Development](#development) below.
 CrossPoint uses PlatformIO for building and flashing the firmware. To get started, clone the repository:
 
 ```
-git clone --recursive https://github.com/teerarattanapon/crosspoint-reader
+git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
 
 # Or, if you've already cloned without --recursive:
 git submodule update --init --recursive
@@ -147,3 +188,5 @@ CrossPoint Reader is **not affiliated with Xteink or any manufacturer of the X4 
 
 Huge shoutout to [**diy-esp32-epub-reader** by atomic14](https://github.com/atomic14/diy-esp32-epub-reader), which was a project I took a lot of inspiration from as I
 was making CrossPoint.
+
+ขอบคุณโครงการ **CrossPoint Halo 2 (HALO)** ที่ [crosspoint-halo2-custom](https://github.com/kocha01/crosspoint-halo2-custom) โดย [@kocha01](https://github.com/kocha01) สำหรับการขยายประสบการณ์ภาษาไทยและ UI เพิ่มเติมบนพื้นฐาน CrossPoint Reader รวมถึง [รีลีส CrossPoint Halo 2 UI — Beta 2](https://github.com/kocha01/crosspoint-halo2-custom/releases/tag/CrossPoint_Halo_2_UI_Beta_2) ที่พัฒนาแป้นพิมพ์ไทยและความสามารถอื่น ๆ แยกจากรีโปนี้
