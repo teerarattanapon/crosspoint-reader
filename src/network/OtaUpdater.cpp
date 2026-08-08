@@ -3,15 +3,34 @@
 #include <ArduinoJson.h>
 #include <Logging.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "bootloader_common.h"
 #include "esp_flash_partitions.h"
 #include "esp_http_client.h"
-#include "esp_https_ota.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_wifi.h"
+
+#include <HTTPClient.h>
+#include <NetworkClientSecure.h>
+#include <WiFi.h>
+#include <memory>
+
+namespace {
+/** Parse major.minor.patch; accepts optional leading 'v'/'V' (GitHub release tags). */
+bool parseSemVer3(const char* version, int& major, int& minor, int& patch) {
+  if (version == nullptr || version[0] == '\0') {
+    return false;
+  }
+  if (version[0] == 'v' || version[0] == 'V') {
+    ++version;
+  }
+  return sscanf(version, "%d.%d.%d", &major, &minor, &patch) == 3;
+}
+
+}  // namespace
 
 struct InstallCallbackClearer {
   OtaUpdater* u;
@@ -29,10 +48,15 @@ void OtaUpdater::setInstallProgressCallback(void (*cb)(void*), void* ctx) {
 
 namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/teerarattanapon/crosspoint-reader/releases/latest";
+/* GitHub release JSON is ~7–8KB; cap avoids mid-TLS calloc of Content-Length (heap fragmentation). */
+constexpr int kReleaseJsonCap = 12288;
+/* Smaller HTTP buffers for metadata fetch — leave contiguous DRAM for local_buf. */
+constexpr int kReleaseHttpBuf = 2048;
 
 /* This is buffer and size holder to keep upcoming data from latestReleaseUrl */
 char* local_buf;
 int output_len;
+int local_buf_cap;
 
 /*
  * When esp_crt_bundle.h included, it is pointing wrong header file
@@ -43,39 +67,121 @@ extern "C" {
 extern esp_err_t esp_crt_bundle_attach(void* conf);
 }
 
-esp_err_t http_client_set_header_cb(esp_http_client_handle_t http_client) {
-  return esp_http_client_set_header(http_client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+/* Captured from HTTP_EVENT_ON_HEADER during redirect resolve (malloc'd). */
+char* redirectLocation = nullptr;
+
+esp_err_t redirect_event_handler(esp_http_client_event_t* event) {
+  if (event->event_id != HTTP_EVENT_ON_HEADER || event->header_key == nullptr || event->header_value == nullptr) {
+    return ESP_OK;
+  }
+  /* Case-insensitive "Location" — esp_http_client_get_header often misses this after fetch_headers. */
+  if (strcasecmp(event->header_key, "Location") != 0) {
+    return ESP_OK;
+  }
+  const size_t n = strlen(event->header_value);
+  auto* buf = static_cast<char*>(malloc(n + 1));
+  if (buf == nullptr) {
+    return ESP_ERR_NO_MEM;
+  }
+  memcpy(buf, event->header_value, n + 1);
+  free(redirectLocation);
+  redirectLocation = buf;
+  return ESP_OK;
+}
+
+/**
+ * GitHub release asset URLs 302 to release-assets.githubusercontent.com with a very long
+ * Location header. Resolving that hop before esp_https_ota_begin avoids CONNECT failures
+ * when the OTA client struggles with the redirect.
+ *
+ * After capturing Location we return immediately — a second open() to the CDN host was
+ * failing with ESP_ERR_HTTP_CONNECT and is unnecessary before esp_https_ota_begin.
+ */
+bool resolveReleaseAssetUrl(std::string& url) {
+  free(redirectLocation);
+  redirectLocation = nullptr;
+
+  esp_http_client_config_t cfg = {
+      .url = url.c_str(),
+      .timeout_ms = 30000,
+      .disable_auto_redirect = true,
+      .max_redirection_count = 0,
+      .event_handler = redirect_event_handler,
+      .buffer_size = 8192,
+      .buffer_size_tx = 8192,
+      .skip_cert_common_name_check = true,
+      .crt_bundle_attach = esp_crt_bundle_attach,
+      .keep_alive_enable = true,
+  };
+
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (!client) {
+    LOG_ERR("OTA", "redirect resolve: client init failed");
+    return false;
+  }
+  esp_http_client_set_header(client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+
+  esp_err_t err = esp_http_client_open(client, 0);
+  if (err != ESP_OK) {
+    LOG_ERR("OTA", "redirect resolve open failed: %s", esp_err_to_name(err));
+    esp_http_client_cleanup(client);
+    return false;
+  }
+
+  esp_http_client_fetch_headers(client);
+  const int status = esp_http_client_get_status_code(client);
+
+  if (status == 200 || status == 206) {
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    free(redirectLocation);
+    redirectLocation = nullptr;
+    return true;
+  }
+
+  if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+    if (redirectLocation == nullptr || redirectLocation[0] == '\0') {
+      LOG_ERR("OTA", "redirect resolve: missing Location (status %d)", status);
+      esp_http_client_close(client);
+      esp_http_client_cleanup(client);
+      return false;
+    }
+    url.assign(redirectLocation);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    free(redirectLocation);
+    redirectLocation = nullptr;
+    return true;
+  }
+
+  LOG_ERR("OTA", "redirect resolve: unexpected status %d", status);
+  esp_http_client_close(client);
+  esp_http_client_cleanup(client);
+  free(redirectLocation);
+  redirectLocation = nullptr;
+  return false;
 }
 
 esp_err_t event_handler(esp_http_client_event_t* event) {
   /* We do interested in only HTTP_EVENT_ON_DATA event only */
   if (event->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
 
-  if (!esp_http_client_is_chunked_response(event->client)) {
-    int content_len = esp_http_client_get_content_length(event->client);
-    int copy_len = 0;
-
-    if (local_buf == NULL) {
-      /* local_buf life span is tracked by caller checkForUpdate */
-      local_buf = static_cast<char*>(calloc(content_len + 1, sizeof(char)));
-      output_len = 0;
-      if (local_buf == NULL) {
-        LOG_ERR("OTA", "HTTP Client Out of Memory Failed, Allocation %d", content_len);
-        return ESP_ERR_NO_MEM;
-      }
-    }
-    copy_len = min(event->data_len, (content_len - output_len));
-    if (copy_len) {
-      memcpy(local_buf + output_len, event->data, copy_len);
-    }
-    output_len += copy_len;
-  } else {
-    /* Code might be hits here, It happened once (for version checking) but I need more logs to handle that */
-    int chunked_len;
-    esp_http_client_get_chunk_length(event->client, &chunked_len);
-    LOG_DBG("OTA", "esp_http_client_is_chunked_response failed, chunked_len: %d", chunked_len);
+  if (local_buf == nullptr || local_buf_cap <= 1) {
+    LOG_ERR("OTA", "HTTP body buffer missing");
+    return ESP_ERR_NO_MEM;
   }
 
+  const int space = local_buf_cap - 1 - output_len;
+  if (space <= 0) {
+    /* Truncation detected after perform via output_len vs content length. */
+    return ESP_OK;
+  }
+
+  const int copy_len = min(event->data_len, space);
+  if (copy_len > 0) {
+    memcpy(local_buf + output_len, event->data, copy_len);
+    output_len += copy_len;
+  }
   return ESP_OK;
 } /* event_handler */
 } /* namespace */
@@ -85,12 +191,22 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   esp_err_t esp_err;
   JsonDocument doc;
 
+  /* Pre-allocate before TLS/HTTP client buffers — calloc during ON_DATA was OOM'ing. */
+  output_len = 0;
+  local_buf_cap = kReleaseJsonCap;
+  local_buf = static_cast<char*>(malloc(static_cast<size_t>(kReleaseJsonCap)));
+  if (local_buf == nullptr) {
+    local_buf_cap = 0;
+    LOG_ERR("OTA", "Release JSON buffer alloc failed: %d", kReleaseJsonCap);
+    return OOM_ERROR;
+  }
+  local_buf[0] = '\0';
+
   esp_http_client_config_t client_config = {
       .url = latestReleaseUrl,
       .event_handler = event_handler,
-      /* Default HTTP client buffer size 512 byte only */
-      .buffer_size = 8192,
-      .buffer_size_tx = 8192,
+      .buffer_size = kReleaseHttpBuf,
+      .buffer_size_tx = kReleaseHttpBuf,
       .skip_cert_common_name_check = true,
       .crt_bundle_attach = esp_crt_bundle_attach,
       .keep_alive_enable = true,
@@ -99,13 +215,15 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   /* To track life time of local_buf, dtor will be called on exit from that function */
   struct localBufCleaner {
     char** bufPtr;
+    int* capPtr;
     ~localBufCleaner() {
       if (*bufPtr) {
         free(*bufPtr);
         *bufPtr = NULL;
       }
+      *capPtr = 0;
     }
-  } localBufCleaner = {&local_buf};
+  } localBufCleaner = {&local_buf, &local_buf_cap};
 
   esp_http_client_handle_t client_handle = esp_http_client_init(&client_config);
   if (!client_handle) {
@@ -127,11 +245,20 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
     return HTTP_ERROR;
   }
 
+  if (local_buf != nullptr && output_len >= 0 && output_len < local_buf_cap) {
+    local_buf[output_len] = '\0';
+  }
+
   /* esp_http_client_close will be called inside cleanup as well*/
   esp_err = esp_http_client_cleanup(client_handle);
   if (esp_err != ESP_OK) {
     LOG_ERR("OTA", "esp_http_client_cleanup Failed : %s", esp_err_to_name(esp_err));
     return INTERNAL_UPDATE_ERROR;
+  }
+
+  if (output_len <= 0) {
+    LOG_ERR("OTA", "Empty release JSON body");
+    return JSON_PARSE_ERROR;
   }
 
   filter["tag_name"] = true;
@@ -166,6 +293,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
     }
   }
 
+
   if (!updateAvailable) {
     LOG_ERR("OTA", "No firmware.bin asset found");
     return NO_UPDATE;
@@ -180,14 +308,18 @@ bool OtaUpdater::isUpdateNewer() const {
     return false;
   }
 
-  int currentMajor, currentMinor, currentPatch;
-  int latestMajor, latestMinor, latestPatch;
+  int currentMajor = 0, currentMinor = 0, currentPatch = 0;
+  int latestMajor = 0, latestMinor = 0, latestPatch = 0;
 
   const auto currentVersion = CROSSPOINT_VERSION;
 
-  // semantic version check (only match on 3 segments)
-  sscanf(latestVersion.c_str(), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
-  sscanf(currentVersion, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
+  // semantic version check (only match on 3 segments; GitHub tags may be "v1.2.3")
+  const bool latestOk = parseSemVer3(latestVersion.c_str(), latestMajor, latestMinor, latestPatch);
+  const bool currentOk = parseSemVer3(currentVersion, currentMajor, currentMinor, currentPatch);
+  if (!latestOk || !currentOk) {
+    LOG_ERR("OTA", "Version parse failed (latest=%s current=%s)", latestVersion.c_str(), currentVersion);
+    return false;
+  }
 
   /*
    * Compare major versions.
@@ -228,93 +360,146 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate() {
   }
 
   processedSize = 0;
-  esp_https_ota_handle_t ota_handle = NULL;
   esp_err_t esp_err;
   /* Signal for OtaUpdateActivity */
   render = false;
 
-  esp_http_client_config_t client_config = {
-      .url = otaUrl.c_str(),
-      /* Large firmware over Wi-Fi may idle longer than 15s between reads. */
-      .timeout_ms = 120000,
-      /* Default HTTP client buffer size 512 byte only
-       * not sufficent to handle URL redirection cases or
-       * parsing of large HTTP headers.
-       */
-      .buffer_size = 8192,
-      .buffer_size_tx = 8192,
-      .skip_cert_common_name_check = true,
-      .crt_bundle_attach = esp_crt_bundle_attach,
-      .keep_alive_enable = true,
-  };
-
-  esp_https_ota_config_t ota_config = {
-      .http_config = &client_config,
-      .http_client_init_cb = http_client_set_header_cb,
-  };
 
   /* For better timing and connectivity, we disable power saving for WiFi */
   esp_wifi_set_ps(WIFI_PS_NONE);
 
-  esp_err = esp_https_ota_begin(&ota_config, &ota_handle);
-  if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "esp_https_ota_begin failed: %s", esp_err_to_name(esp_err));
-    return INTERNAL_UPDATE_ERROR;
-  }
-
+  /* Prefer public DNS — CDN host (release-assets.githubusercontent.com) can fail on ISP DNS. */
   {
-    const int httpImageSize = esp_https_ota_get_image_size(ota_handle);
-    if (httpImageSize > 0) {
-      totalSize = static_cast<size_t>(httpImageSize);
-      LOG_DBG("OTA", "OTA total size from HTTP Content-Length: %u (GitHub API was %u)",
-              static_cast<unsigned>(totalSize), static_cast<unsigned>(otaSize));
-    } else {
-      totalSize = otaSize;
-      LOG_DBG("OTA", "OTA total size fallback to GitHub API: %u (http size %d)",
-              static_cast<unsigned>(totalSize), httpImageSize);
+    const IPAddress dns1(8, 8, 8, 8);
+    const IPAddress dns2(1, 1, 1, 1);
+    if (!WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), dns1, dns2)) {
+      LOG_ERR("OTA", "WiFi.config DNS override failed (continuing)");
     }
   }
 
-  do {
-    esp_err = esp_https_ota_perform(ota_handle);
-    processedSize = esp_https_ota_get_image_len_read(ota_handle);
-    /* Sent signal to  OtaUpdateActivity */
+  if (!resolveReleaseAssetUrl(otaUrl)) {
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return HTTP_ERROR;
+  }
+
+
+  /*
+   * esp_https_ota_begin fails with ESP_ERR_HTTP_CONNECT to GitHub's CDN
+   * (release-assets.githubusercontent.com). Use the same NetworkClientSecure +
+   * setInsecure() path as HttpDownloader, which already works for HTTPS on device.
+   */
+  auto secureClient = std::make_unique<NetworkClientSecure>();
+  if (!secureClient) {
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return OOM_ERROR;
+  }
+  secureClient->setInsecure();
+  secureClient->setTimeout(120);
+
+  HTTPClient http;
+  http.setTimeout(60000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  if (!http.begin(*secureClient, otaUrl.c_str())) {
+    LOG_ERR("OTA", "HTTPClient begin failed");
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return HTTP_ERROR;
+  }
+  http.addHeader("User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+
+  const int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    LOG_ERR("OTA", "HTTP GET failed: %d", httpCode);
+    http.end();
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return HTTP_ERROR;
+  }
+
+  {
+    const int contentLen = http.getSize();
+    if (contentLen > 0) {
+      totalSize = static_cast<size_t>(contentLen);
+    } else {
+      totalSize = otaSize;
+    }
+  }
+
+  const esp_partition_t* ota_part = esp_ota_get_next_update_partition(nullptr);
+  if (!ota_part) {
+    LOG_ERR("OTA", "No OTA partition found");
+    http.end();
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return INTERNAL_UPDATE_ERROR;
+  }
+
+  esp_ota_handle_t ota_handle = 0;
+  esp_err = esp_ota_begin(ota_part, totalSize > 0 ? totalSize : OTA_SIZE_UNKNOWN, &ota_handle);
+  if (esp_err != ESP_OK) {
+    LOG_ERR("OTA", "esp_ota_begin failed: %s", esp_err_to_name(esp_err));
+    http.end();
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return INTERNAL_UPDATE_ERROR;
+  }
+
+  constexpr size_t kChunk = 1024;
+  auto* chunk = static_cast<uint8_t*>(malloc(kChunk));
+  if (!chunk) {
+    LOG_ERR("OTA", "OTA chunk malloc failed");
+    esp_ota_abort(ota_handle);
+    http.end();
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    return OOM_ERROR;
+  }
+
+  NetworkClient& stream = http.getStream();
+  while (http.connected() && (totalSize == 0 || processedSize < totalSize)) {
+    const size_t avail = stream.available();
+    if (avail == 0) {
+      delay(1);
+      if (!http.connected()) {
+        break;
+      }
+      continue;
+    }
+    const size_t toRead = avail > kChunk ? kChunk : avail;
+    const int n = stream.readBytes(chunk, toRead);
+    if (n <= 0) {
+      break;
+    }
+    esp_err = esp_ota_write(ota_handle, chunk, static_cast<size_t>(n));
+    if (esp_err != ESP_OK) {
+      LOG_ERR("OTA", "esp_ota_write failed: %s", esp_err_to_name(esp_err));
+      free(chunk);
+      esp_ota_abort(ota_handle);
+      http.end();
+      esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+      return INTERNAL_UPDATE_ERROR;
+    }
+    processedSize += static_cast<size_t>(n);
     render = true;
     if (installProgressCallback) {
       installProgressCallback(installProgressCallbackCtx);
     }
-    delay(100);  // TODO: should we replace this with something better?
-  } while (esp_err == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
+  }
+  free(chunk);
+  chunk = nullptr;
+  http.end();
 
-  /* Return back to default power saving for WiFi in case of failing */
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
-  if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "esp_https_ota_perform Failed: %s (0x%x)", esp_err_to_name(esp_err),
-            static_cast<unsigned>(esp_err));
-    esp_https_ota_abort(ota_handle);
-    return HTTP_ERROR;
-  }
-
-  if (!esp_https_ota_is_complete_data_received(ota_handle)) {
-    LOG_ERR("OTA", "OTA incomplete: read %d bytes (full image not received per HTTP)",
-            esp_https_ota_get_image_len_read(ota_handle));
-    esp_https_ota_abort(ota_handle);
+  if (processedSize == 0 || (totalSize > 0 && processedSize < totalSize)) {
+    LOG_ERR("OTA", "OTA incomplete: read %u / %u", static_cast<unsigned>(processedSize),
+            static_cast<unsigned>(totalSize));
+    esp_ota_abort(ota_handle);
     return OTA_DOWNLOAD_INCOMPLETE;
   }
 
   /*
-   * Workaround (same idea as crosspoint-halo2-custom): pioarduino 55.x / ESP-IDF5.5.x
-   * esp_https_ota_finish() -> esp_image_verify() can falsely return ESP_ERR_OTA_VALIDATE_FAILED
-   * (efuse block-revision misread). We verify the flashed image lightly, abort the HTTPS OTA
-   * handle without finish(), then update otadata so the bootloader boots the new slot.
+   * Workaround (same idea as crosspoint-halo2-custom): esp_ota_end() -> esp_image_verify()
+   * can falsely return ESP_ERR_OTA_VALIDATE_FAILED. Abort the OTA handle (data already on
+   * flash), lightly verify the header, then update otadata.
    */
-  const esp_partition_t* ota_part = esp_ota_get_next_update_partition(nullptr);
-  if (!ota_part) {
-    LOG_ERR("OTA", "No OTA partition found (0x%x)", static_cast<unsigned>(ESP_ERR_NOT_FOUND));
-    esp_https_ota_abort(ota_handle);
-    return INTERNAL_UPDATE_ERROR;
-  }
+  esp_ota_abort(ota_handle);
+  ota_handle = 0;
 
   {
     uint8_t buf[48];
@@ -322,31 +507,21 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate() {
     if (read_err != ESP_OK) {
       LOG_ERR("OTA", "Partition read failed: %s (0x%x)", esp_err_to_name(read_err),
               static_cast<unsigned>(read_err));
-      esp_https_ota_abort(ota_handle);
       return OTA_IMAGE_VALIDATE_FAILED;
     }
     if (buf[0] != 0xE9) {
       LOG_ERR("OTA", "Bad image magic: 0x%02X (expected 0xE9)", buf[0]);
-      esp_https_ota_abort(ota_handle);
       return OTA_IMAGE_VALIDATE_FAILED;
     }
     uint32_t app_magic = 0;
     memcpy(&app_magic, buf + 32, sizeof(app_magic));
     if (app_magic != 0xABCD5432) {
       LOG_ERR("OTA", "Bad app_desc magic: 0x%08lX (expected 0xABCD5432)", static_cast<unsigned long>(app_magic));
-      esp_https_ota_abort(ota_handle);
       return OTA_IMAGE_VALIDATE_FAILED;
     }
   }
 
   LOG_INF("OTA", "Firmware header OK, switching boot partition...");
-
-  esp_err = esp_https_ota_abort(ota_handle);
-  if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "esp_https_ota_abort failed: %s (0x%x)", esp_err_to_name(esp_err),
-            static_cast<unsigned>(esp_err));
-    return INTERNAL_UPDATE_ERROR;
-  }
 
   const esp_partition_t* otadata_part =
       esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_OTA, nullptr);

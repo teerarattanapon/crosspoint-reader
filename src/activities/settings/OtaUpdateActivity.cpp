@@ -203,6 +203,7 @@ void OtaUpdateActivity::loop() {
       {
         RenderLock lock(*this);
         state = FINISHED;
+        finishedAtMs = millis();
       }
       requestUpdate();
     }
@@ -224,6 +225,14 @@ void OtaUpdateActivity::loop() {
   if (state == NO_UPDATE) {
     if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
       finish();
+    }
+    return;
+  }
+
+  if (state == FINISHED) {
+    if (millis() - finishedAtMs >= kRebootDelayMs) {
+      LOG_INF("OTA", "Auto-reboot after OTA");
+      state = SHUTTING_DOWN;
     }
     return;
   }

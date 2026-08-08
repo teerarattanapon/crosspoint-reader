@@ -187,7 +187,7 @@ STR_OTA_ERR_DOWNLOAD: "การเชื่อมต่อขาดหายห
 STR_OTA_ERR_INCOMPLETE: "ไฟล์อัปเดตไม่ครบถ้วน"
 STR_OTA_ERR_INVALID_IMAGE: "เฟิร์มแวร์ไม่ถูกต้องหรือใหญ่เกินเครื่องนี้"
 STR_OTA_ERR_GENERIC: "ดำเนินการอัปเดตไม่สำเร็จ"
-STR_POWER_ON_HINT: "กดรีเซ็ตแล้วกดค้างปุ่มเปิดเพื่อเปิดเครื่องอีกครั้ง"
+STR_POWER_ON_HINT: "จะรีบูตใน 10 วินาที หรือกดรีเซ็ตได้เลย"
 STR_NO_ENTRIES: "ไม่พบรายการ"
 STR_DOWNLOADING: "กำลังดาวน์โหลด..."
 STR_DOWNLOAD_FAILED: "ดาวน์โหลดไม่สำเร็จ"
