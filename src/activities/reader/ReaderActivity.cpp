@@ -2,10 +2,12 @@
 
 #include <FsHelpers.h>
 #include <HalStorage.h>
+#include <I18n.h>
 
 #include "CrossPointSettings.h"
 #include "Epub.h"
 #include "EpubReaderActivity.h"
+#include "components/UITheme.h"
 #include "Txt.h"
 #include "TxtReaderActivity.h"
 #include "Xtc.h"
@@ -29,7 +31,25 @@ std::unique_ptr<Epub> ReaderActivity::loadEpub(const std::string& path) {
   }
 
   auto epub = std::unique_ptr<Epub>(new Epub(path, "/.crosspoint"));
-  if (epub->load(true, SETTINGS.embeddedStyle == 0)) {
+
+  Rect popupRect;
+  bool popupShown = false;
+  const auto progressFn = [this, &popupRect, &popupShown](int percent) {
+    // onEnter() runs on the main task, not the render task — must hold the render
+    // mutex ourselves before drawing directly, same as every other activity that
+    // draws outside of render() (see OtaUpdateActivity, ClearCacheActivity, etc).
+    RenderLock lock(*this);
+    if (!popupShown) {
+      popupShown = true;
+      // Clear first: whatever screen we navigated here from (e.g. Home) is still
+      // sitting in the shared framebuffer at this point.
+      renderer.clearScreen();
+      popupRect = GUI.drawPopup(renderer, tr(STR_OPENING_BOOK));
+    }
+    GUI.fillPopupProgress(renderer, popupRect, percent);
+  };
+
+  if (epub->load(true, SETTINGS.embeddedStyle == 0, progressFn)) {
     return epub;
   }
 

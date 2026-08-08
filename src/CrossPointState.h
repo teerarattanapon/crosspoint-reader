@@ -12,6 +12,11 @@ class CrossPointState {
   uint8_t lastSleepImage = UINT8_MAX;  // UINT8_MAX = unset sentinel
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
+  bool lastSleepFromGame = false;
+  // Set on sleep-from-game wake so GamesMenu auto-opens the matching game with resume prompt.
+  bool autoResumeTretis = false;
+  bool autoResumeSudoku = false;
+  bool autoResumeCatRun = false;
   ~CrossPointState() = default;
 
   // Get singleton instance

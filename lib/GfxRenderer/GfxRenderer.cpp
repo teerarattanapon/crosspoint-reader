@@ -950,7 +950,10 @@ std::string GfxRenderer::truncatedText(const int fontId, const char* text, const
     return item;
   }
 
-  while (!item.empty() && getTextWidth(fontId, (item + ellipsis).c_str(), style) >= maxWidth) {
+  // Measure the ellipsis once instead of re-concatenating item+ellipsis into a new
+  // string on every removed character (was an allocation per iteration).
+  const int ellipsisWidth = getTextWidth(fontId, ellipsis, style);
+  while (!item.empty() && getTextWidth(fontId, item.c_str(), style) + ellipsisWidth >= maxWidth) {
     utf8RemoveLastChar(item);
   }
 

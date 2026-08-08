@@ -19,6 +19,9 @@ build
 lib/EpdFont/scripts/.venv/
 .font-fetch/
 
+# Cat Run source/ref art (packed sprites live under src/activities/games/catrun_sprites/)
+assets/catrun/
+
 # Local PlatformIO / vendored copies (also under .pio/libdeps); do not commit
 lib/ArduinoJson/
 lib/JPEGDEC/

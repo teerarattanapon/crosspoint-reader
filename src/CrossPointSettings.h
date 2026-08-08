@@ -199,6 +199,11 @@ class CrossPointSettings {
   uint8_t showHiddenFiles = 0;
   // Image rendering mode in EPUB reader
   uint8_t imageRendering = IMAGES_DISPLAY;
+  // Lock screen settings
+  uint8_t lockEnabled = 0;
+  char lockPin[5] = "";
+  char lockMessageLine1[64] = "";
+  char lockMessageLine2[64] = "";
 
   ~CrossPointSettings() = default;
 
@@ -231,6 +236,10 @@ class CrossPointSettings {
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;
   int getRefreshFrequency() const;
+
+  bool isLockScreenActive() const;
+  bool isValidLockPin(const char* pin) const;
+  bool verifyLockPin(const char* pin) const;
 };
 
 // Helper macro to access settings

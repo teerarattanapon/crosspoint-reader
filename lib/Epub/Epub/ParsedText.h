@@ -38,7 +38,14 @@ class ParsedText {
  public:
   explicit ParsedText(const bool extraParagraphSpacing, const bool hyphenationEnabled = false,
                       const BlockStyle& blockStyle = BlockStyle())
-      : blockStyle(blockStyle), extraParagraphSpacing(extraParagraphSpacing), hyphenationEnabled(hyphenationEnabled) {}
+      : blockStyle(blockStyle), extraParagraphSpacing(extraParagraphSpacing), hyphenationEnabled(hyphenationEnabled) {
+    // Conservative estimate for a typical paragraph's word count; avoids the first few
+    // doubling reallocations during parse. Capacity persists across layoutAndExtractLines()'s
+    // erase() calls, so this only matters once per ParsedText instance, not per render.
+    words.reserve(16);
+    wordStyles.reserve(16);
+    wordContinues.reserve(16);
+  }
   ~ParsedText() = default;
 
   void addWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false, bool attachToPrevious = false);

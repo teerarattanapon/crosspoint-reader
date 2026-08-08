@@ -2,9 +2,12 @@
 
 #include <HalPowerManager.h>
 
+#include "Activity.h"
 #include "boot_sleep/BootActivity.h"
+#include "boot_sleep/LockScreenActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
+#include "games/GamesMenuActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
 #include "home/RecentBooksActivity.h"
@@ -181,16 +184,39 @@ void ActivityManager::goToBrowser() {
   replaceActivity(std::make_unique<OpdsBookBrowserActivity>(renderer, mappedInput));
 }
 
+void ActivityManager::goToGames() { replaceActivity(std::make_unique<GamesMenuActivity>(renderer, mappedInput)); }
+
 void ActivityManager::goToReader(std::string path) {
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
 }
 
 void ActivityManager::goToSleep() {
   replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput));
-  loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns
+  // Process Replace only — do not call currentActivity->loop() (e.g. Cat Run would
+  // tick/requestUpdate and race a FAST_REFRESH against the sleep screen draw).
+  if (pendingAction == PendingAction::Replace && pendingActivity) {
+    RenderLock lock;
+    exitActivity(lock);
+    while (!stackActivities.empty()) {
+      stackActivities.back()->onExit();
+      stackActivities.pop_back();
+    }
+    pendingAction = PendingAction::None;
+    currentActivity = std::move(pendingActivity);
+    lock.unlock();  // onEnter may acquire its own lock
+    currentActivity->onEnter();
+  }
+  // Drop any update queued by the exiting game so the render task does not redraw it.
+  requestedUpdate = false;
 }
 
-void ActivityManager::goToBoot() { replaceActivity(std::make_unique<BootActivity>(renderer, mappedInput)); }
+void ActivityManager::goToBoot(std::function<void()> onContinue) {
+  replaceActivity(std::make_unique<BootActivity>(renderer, mappedInput, std::move(onContinue)));
+}
+
+void ActivityManager::goToLockScreen(std::function<void()> onUnlock) {
+  replaceActivity(std::make_unique<LockScreenActivity>(renderer, mappedInput, std::move(onUnlock)));
+}
 
 void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::Style style) {
   replaceActivity(std::make_unique<FullScreenMessageActivity>(renderer, mappedInput, std::move(message), style));
@@ -220,6 +246,12 @@ void ActivityManager::popActivity() {
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
 
 bool ActivityManager::isReaderActivity() const { return currentActivity && currentActivity->isReaderActivity(); }
+
+bool ActivityManager::isGameActivity() const { return currentActivity && currentActivity->isGameActivity(); }
+
+GameKind ActivityManager::getGameKind() const {
+  return currentActivity ? currentActivity->getGameKind() : GameKind::None;
+}
 
 bool ActivityManager::skipLoopDelay() const { return currentActivity && currentActivity->skipLoopDelay(); }
 

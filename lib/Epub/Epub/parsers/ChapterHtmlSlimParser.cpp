@@ -20,7 +20,7 @@ constexpr int NUM_HEADER_TAGS = sizeof(HEADER_TAGS) / sizeof(HEADER_TAGS[0]);
 
 // Minimum file size (in bytes) to show indexing popup - smaller chapters don't benefit from it
 constexpr size_t MIN_SIZE_FOR_POPUP = 10 * 1024;  // 10KB
-constexpr size_t PARSE_BUFFER_SIZE = 1024;
+constexpr size_t PARSE_BUFFER_SIZE = 4096;
 
 const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote"};
 constexpr int NUM_BLOCK_TAGS = sizeof(BLOCK_TAGS) / sizeof(BLOCK_TAGS[0]);
@@ -1099,8 +1099,12 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
   }
 
   // Get file size to decide whether to show indexing popup.
-  if (popupFn && file.size() >= MIN_SIZE_FOR_POPUP) {
-    popupFn();
+  const uint32_t fileSize = file.size();
+  const bool showPopup = popupFn && fileSize >= MIN_SIZE_FOR_POPUP;
+  int lastReportedPercent = -100;  // force the first report at 0%
+  if (showPopup) {
+    popupFn(0);
+    lastReportedPercent = 0;
   }
 
   XML_SetUserData(parser, this);
@@ -1134,6 +1138,14 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
     }
 
     done = file.available() == 0;
+
+    if (showPopup) {
+      const int percent = static_cast<int>(file.position() * 100 / fileSize);
+      if (percent - lastReportedPercent >= 5 || done) {
+        popupFn(percent);
+        lastReportedPercent = percent;
+      }
+    }
 
     if (XML_ParseBuffer(parser, static_cast<int>(len), done) == XML_STATUS_ERROR) {
       LOG_ERR("EHP", "Parse error at line %lu:\n%s", XML_GetCurrentLineNumber(parser),

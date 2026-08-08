@@ -96,7 +96,8 @@ bool BookMetadataCache::endWrite() {
   return true;
 }
 
-bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMetadata& metadata) {
+bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMetadata& metadata,
+                                     const std::function<void(int percent)>& progressFn) {
   // Open all three files, writing to meta, reading from spine and toc
   if (!Storage.openFileForWrite("BMC", cachePath + bookBinFile, bookFile)) {
     return false;
@@ -219,6 +220,10 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   uint32_t cumSize = 0;
   spineFile.seek(0);
   int lastSpineTocIndex = -1;
+  int lastReportedPercent = 0;
+  if (progressFn && spineCount > 0) {
+    progressFn(0);
+  }
   for (int i = 0; i < spineCount; i++) {
     auto spineEntry = readSpineEntry(spineFile);
 
@@ -254,6 +259,14 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
 
     // Write out spine data to book.bin
     writeSpineEntry(bookFile, spineEntry);
+
+    if (progressFn) {
+      const int percent = (i + 1) * 100 / spineCount;
+      if (percent - lastReportedPercent >= 5 || i == spineCount - 1) {
+        progressFn(percent);
+        lastReportedPercent = percent;
+      }
+    }
   }
   // Close opened zip file
   zip.close();

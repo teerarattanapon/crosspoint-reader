@@ -10,6 +10,8 @@ class ConfirmationActivity : public Activity {
   // Input data
   std::string heading;
   std::string body;
+  std::string leftLabel;
+  std::string rightLabel;
 
   const int margin = 20;
   const int spacing = 30;
@@ -21,8 +23,10 @@ class ConfirmationActivity : public Activity {
   int lineHeight = 0;
 
  public:
+  // leftLabel/rightLabel default to Cancel/Confirm when empty.
   ConfirmationActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& heading,
-                       const std::string& body);
+                       const std::string& body, const std::string& leftLabel = "",
+                       const std::string& rightLabel = "");
 
   void onEnter() override;
   void loop() override;

@@ -94,6 +94,17 @@ inline const std::vector<SettingInfo>& getSettingsList() {
                         "sleepTimeout", StrId::STR_CAT_SYSTEM),
       SettingInfo::Toggle(StrId::STR_SHOW_HIDDEN_FILES, &CrossPointSettings::showHiddenFiles, "showHiddenFiles",
                           StrId::STR_CAT_SYSTEM),
+      SettingInfo::Toggle(StrId::STR_LOCK_SCREEN, &CrossPointSettings::lockEnabled, "lockEnabled",
+                          StrId::STR_CAT_SYSTEM),
+
+      // --- Lock Screen details (web-only; device uses LockScreenSettingsActivity wizard) ---
+      SettingInfo::String(StrId::STR_ENTER_NEW_PIN, SETTINGS.lockPin, sizeof(SETTINGS.lockPin), "lockPin",
+                          StrId::STR_LOCK_SCREEN)
+          .withObfuscated(),
+      SettingInfo::String(StrId::STR_LOCK_MESSAGE_LINE1, SETTINGS.lockMessageLine1, sizeof(SETTINGS.lockMessageLine1),
+                          "lockMessageLine1", StrId::STR_LOCK_SCREEN),
+      SettingInfo::String(StrId::STR_LOCK_MESSAGE_LINE2, SETTINGS.lockMessageLine2, sizeof(SETTINGS.lockMessageLine2),
+                          "lockMessageLine2", StrId::STR_LOCK_SCREEN),
 
       // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
       SettingInfo::DynamicString(

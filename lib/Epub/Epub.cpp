@@ -331,7 +331,8 @@ void Epub::parseCssFiles() const {
 }
 
 // load in the meta data for the epub file
-bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
+bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss,
+                const std::function<void(int percent)>& progressFn) {
   LOG_DBG("EBP", "Loading ePub: %s", filepath.c_str());
 
   // Initialize spine/TOC cache
@@ -434,7 +435,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
 
   // Build final book.bin
   const uint32_t buildStart = millis();
-  if (!bookMetadataCache->buildBookBin(filepath, bookMetadata)) {
+  if (!bookMetadataCache->buildBookBin(filepath, bookMetadata, progressFn)) {
     LOG_ERR("EBP", "Could not update mappings and sizes");
     return false;
   }

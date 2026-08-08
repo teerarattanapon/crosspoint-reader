@@ -26,7 +26,7 @@ class ChapterHtmlSlimParser {
   const std::string& filepath;
   GfxRenderer& renderer;
   std::function<void(std::unique_ptr<Page>)> completePageFn;
-  std::function<void()> popupFn;  // Popup callback
+  std::function<void(int percent)> popupFn;  // Popup callback; percent is 0-100
   int depth = 0;
   int skipUntilDepth = INT_MAX;
   int boldUntilDepth = INT_MAX;
@@ -104,7 +104,8 @@ class ChapterHtmlSlimParser {
                                  const std::function<void(std::unique_ptr<Page>)>& completePageFn,
                                  const bool embeddedStyle, const std::string& contentBase,
                                  const std::string& imageBasePath, const uint8_t imageRendering = 0,
-                                 const std::function<void()>& popupFn = nullptr, const CssParser* cssParser = nullptr)
+                                 const std::function<void(int percent)>& popupFn = nullptr,
+                                 const CssParser* cssParser = nullptr)
 
       : epub(epub),
         filepath(filepath),
@@ -122,7 +123,11 @@ class ChapterHtmlSlimParser {
         embeddedStyle(embeddedStyle),
         imageRendering(imageRendering),
         contentBase(contentBase),
-        imageBasePath(imageBasePath) {}
+        imageBasePath(imageBasePath) {
+    // Nesting depth is small in real EPUB markup (rarely >8); avoids the first
+    // few doubling reallocations as inline tags are pushed/popped during parse.
+    inlineStyleStack.reserve(8);
+  }
 
   ~ChapterHtmlSlimParser() = default;
   bool parseAndBuildPages();

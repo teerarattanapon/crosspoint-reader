@@ -112,6 +112,10 @@
     .setting-control input[type="number"] {
       width: 80px;
     }
+    .setting-control input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     /* Toggle switch */
     .toggle-switch {
       display: inline-block;
@@ -311,10 +315,14 @@
     }
 
     if (setting.type === 'string') {
-      const inputType = setting.name.toLowerCase().includes('password') ? 'password' : 'text';
+      const inputType = (setting.password || setting.name.toLowerCase().includes('password'))
+        ? 'password' : 'text';
       const val = setting.value || '';
+      const maxLen = setting.maxLength
+        ? ' maxlength="' + setting.maxLength + '"' : '';
+      const inputMode = setting.key === 'lockPin' ? ' inputmode="numeric" pattern="[0-9]{4}"' : '';
       return '<input type="' + inputType + '" id="' + id + '" value="' + escapeHtml(val) + '"' +
-        ' oninput="markChanged()">';
+        maxLen + inputMode + ' oninput="markChanged()">';
     }
 
     return '';
@@ -341,6 +349,17 @@
 
   function markChanged() {
     document.getElementById('saveBtn').disabled = false;
+  }
+
+  // PIN / message lines only make sense while Lock Screen is on — keep them
+  // disabled otherwise, mirroring the on-device Lock Screen Setup screen.
+  function updateLockScreenFieldsState() {
+    const lockToggle = document.getElementById('setting-lockEnabled');
+    const enabled = lockToggle ? lockToggle.checked : false;
+    ['lockPin', 'lockMessageLine1', 'lockMessageLine2'].forEach(function(key) {
+      const el = document.getElementById('setting-' + key);
+      if (el) el.disabled = !enabled;
+    });
   }
 
   async function loadSettings() {
@@ -381,6 +400,12 @@
       container.innerHTML = html;
       document.getElementById('save-container').style.display = '';
       document.getElementById('saveBtn').disabled = true;
+
+      const lockToggle = document.getElementById('setting-lockEnabled');
+      if (lockToggle) {
+        lockToggle.addEventListener('change', updateLockScreenFieldsState);
+      }
+      updateLockScreenFieldsState();
     } catch (e) {
       console.error(e);
       document.getElementById('settings-container').innerHTML =
@@ -404,6 +429,13 @@
 
     if (Object.keys(changes).length === 0) {
       showMessage('No changes to save.', false);
+      btn.textContent = 'Save Settings';
+      return;
+    }
+
+    if (changes.lockPin !== undefined && !/^\d{4}$/.test(changes.lockPin)) {
+      showMessage('PIN must be exactly 4 digits', true);
+      btn.disabled = false;
       btn.textContent = 'Save Settings';
       return;
     }

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Epub.h>
+#include <esp_system.h>
 #include "Epub/hyphenation/ThaiWordBreaker.h"
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
@@ -23,6 +24,12 @@
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
+#include "SudokuSaveStore.h"
+#include "SudokuScoreStore.h"
+#include "TretisSaveStore.h"
+#include "TretisScoreStore.h"
+#include "CatRunSaveStore.h"
+#include "CatRunScoreStore.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
 #include "components/UITheme.h"
@@ -35,6 +42,13 @@ GfxRenderer renderer(display);
 ActivityManager activityManager(renderer, mappedInputManager);
 FontDecompressor fontDecompressor;
 FontCacheManager fontCacheManager(renderer.getFontMap());
+
+// Set from an Activity::loop(); consumed in main::loop() after activityManager.loop() returns.
+// Never call enterDeepSleep() directly from inside an activity — it replaces/destroys the current
+// activity while its loop() is still on the stack.
+static bool g_requestDeepSleep = false;
+
+void requestDeepSleepFromActivity() { g_requestDeepSleep = true; }
 
 // Fonts — Noto Sans 14pt always linked (default reader family for OMIT_FONTS / slim builds).
 EpdFont notosans14RegularFont(&notosans_14_regular);
@@ -147,6 +161,26 @@ void waitForPowerRelease() {
 void enterDeepSleep() {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
+  APP_STATE.lastSleepFromGame = activityManager.isGameActivity();
+  // Flag before goToSleep(): game activity onExit() writes the board during the replace.
+  APP_STATE.autoResumeTretis = false;
+  APP_STATE.autoResumeSudoku = false;
+  APP_STATE.autoResumeCatRun = false;
+  if (APP_STATE.lastSleepFromGame) {
+    switch (activityManager.getGameKind()) {
+      case GameKind::Tretis:
+        APP_STATE.autoResumeTretis = true;
+        break;
+      case GameKind::Sudoku:
+        APP_STATE.autoResumeSudoku = true;
+        break;
+      case GameKind::CatRun:
+        APP_STATE.autoResumeCatRun = true;
+        break;
+      case GameKind::None:
+        break;
+    }
+  }
   APP_STATE.saveToFile();
 
   activityManager.goToSleep();
@@ -274,8 +308,10 @@ void setup() {
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:
       LOG_DBG("MAIN", "Verifying power button press duration");
+      // Allow short press when lock screen is on — otherwise first tap re-sleeps before PIN UI.
       gpio.verifyPowerButtonWakeup(SETTINGS.getPowerButtonDuration(),
-                                   SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
+                                   SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP ||
+                                       SETTINGS.isLockScreenActive());
       break;
     case HalGPIO::WakeupReason::AfterUSBPower:
       // If USB power caused a cold boot, go back to sleep
@@ -294,23 +330,55 @@ void setup() {
 
   setupDisplayAndFonts();
 
-  activityManager.goToBoot();
-
   APP_STATE.loadFromFile();
   RECENT_BOOKS.loadFromFile();
+  TRETIS_SCORES.loadFromFile();
+  TRETIS_SAVE.loadFromFile();
+  SUDOKU_SCORES.loadFromFile();
+  SUDOKU_SAVE.loadFromFile();
+  CATRUN_SCORES.loadFromFile();
+  CATRUN_SAVE.loadFromFile();
 
-  // Boot to home screen if no book is open, last sleep was not from reader, back button is held, or reader activity
-  // crashed (indicated by readerActivityLoadCount > 0)
-  if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader ||
-      mappedInputManager.isPressed(MappedInputManager::Button::Back) || APP_STATE.readerActivityLoadCount > 0) {
-    activityManager.goHome();
+  const bool resumeToReader = !APP_STATE.openEpubPath.empty() && APP_STATE.lastSleepFromReader &&
+                              !mappedInputManager.isPressed(MappedInputManager::Button::Back) &&
+                              APP_STATE.readerActivityLoadCount == 0;
+  const bool resumeToGame =
+      APP_STATE.lastSleepFromGame &&
+      ((APP_STATE.autoResumeTretis && TRETIS_SAVE.hasSave()) || (APP_STATE.autoResumeSudoku && SUDOKU_SAVE.hasSave()) ||
+       (APP_STATE.autoResumeCatRun && CATRUN_SAVE.hasSave())) &&
+      !mappedInputManager.isPressed(MappedInputManager::Button::Back);
+  const std::string readerPath = APP_STATE.openEpubPath;
+
+  const auto resumeNormalBoot = [resumeToReader, resumeToGame, readerPath]() {
+    if (resumeToReader) {
+      APP_STATE.openEpubPath = "";
+      APP_STATE.readerActivityLoadCount++;
+      APP_STATE.lastSleepFromGame = false;
+      APP_STATE.autoResumeTretis = false;
+      APP_STATE.autoResumeSudoku = false;
+      APP_STATE.autoResumeCatRun = false;
+      APP_STATE.saveToFile();
+      activityManager.goToReader(readerPath);
+    } else if (resumeToGame) {
+      APP_STATE.lastSleepFromGame = false;
+      // autoResume* flags stay true so GamesMenu opens the matching resume prompt.
+      APP_STATE.saveToFile();
+      activityManager.goToGames();
+    } else {
+      APP_STATE.lastSleepFromGame = false;
+      APP_STATE.autoResumeTretis = false;
+      APP_STATE.autoResumeSudoku = false;
+      APP_STATE.autoResumeCatRun = false;
+      APP_STATE.saveToFile();
+      activityManager.goHome();
+    }
+  };
+
+  if (SETTINGS.isLockScreenActive()) {
+    activityManager.goToLockScreen([resumeNormalBoot]() { activityManager.goToBoot(resumeNormalBoot); });
   } else {
-    // Clear app state to avoid getting into a boot loop if the epub doesn't load
-    const auto path = APP_STATE.openEpubPath;
-    APP_STATE.openEpubPath = "";
-    APP_STATE.readerActivityLoadCount++;
-    APP_STATE.saveToFile();
-    activityManager.goToReader(path);
+    activityManager.goToBoot();
+    resumeNormalBoot();
   }
 
   // Ensure we're not still holding the power button before leaving setup
@@ -397,6 +465,12 @@ void loop() {
   const unsigned long activityStartTime = millis();
   activityManager.loop();
   const unsigned long activityDuration = millis() - activityStartTime;
+
+  if (g_requestDeepSleep) {
+    g_requestDeepSleep = false;
+    enterDeepSleep();
+    return;
+  }
 
   const unsigned long loopDuration = millis() - loopStartTime;
   if (loopDuration > maxLoopDuration) {

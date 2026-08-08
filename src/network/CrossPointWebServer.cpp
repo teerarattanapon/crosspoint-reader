@@ -1127,6 +1127,10 @@ void CrossPointWebServer::handleGetSettings() const {
           doc["value"] = s.stringGetter();
         } else if (s.stringMaxLen > 0) {
           doc["value"] = reinterpret_cast<const char*>(&SETTINGS) + s.stringOffset;
+          doc["maxLength"] = static_cast<int>(s.stringMaxLen - 1);
+        }
+        if (s.obfuscated) {
+          doc["password"] = true;
         }
         break;
       }
@@ -1167,8 +1171,18 @@ void CrossPointWebServer::handlePostSettings() {
     return;
   }
 
+  // Validate lockPin before applying any changes so we never partially save.
+  if (doc["lockPin"].is<JsonVariant>()) {
+    const std::string pinVal = doc["lockPin"].as<std::string>();
+    if (!SETTINGS.isValidLockPin(pinVal.c_str())) {
+      server->send(400, "text/plain", "PIN must be exactly 4 digits");
+      return;
+    }
+  }
+
   const auto& settings = getSettingsList();
   int applied = 0;
+  bool lockPinUpdated = false;
 
   for (const auto& s : settings) {
     if (!s.key) continue;
@@ -1214,12 +1228,20 @@ void CrossPointWebServer::handlePostSettings() {
           strncpy(ptr, val.c_str(), s.stringMaxLen - 1);
           ptr[s.stringMaxLen - 1] = '\0';
         }
+        if (strcmp(s.key, "lockPin") == 0) {
+          lockPinUpdated = true;
+        }
         applied++;
         break;
       }
       default:
         break;
     }
+  }
+
+  // Match device Lock Screen Setup wizard: setting a valid PIN enables the lock.
+  if (lockPinUpdated) {
+    SETTINGS.lockEnabled = 1;
   }
 
   SETTINGS.saveToFile();

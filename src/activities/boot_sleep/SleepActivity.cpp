@@ -17,7 +17,15 @@
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
-  GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+  // Skip popup when sleeping from a game: it would FAST_REFRESH over the dense
+  // game frame and leave ghosts under the sleep screen. Wipe to white first so
+  // the following HALF_REFRESH sleep art does not composite over game residue.
+  if (APP_STATE.lastSleepFromGame) {
+    renderer.clearScreen();
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  } else {
+    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+  }
 
   switch (SETTINGS.sleepScreen) {
     case (CrossPointSettings::SLEEP_SCREEN_MODE::BLANK):

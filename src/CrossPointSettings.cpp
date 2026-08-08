@@ -310,6 +310,27 @@ int CrossPointSettings::getRefreshFrequency() const {
   }
 }
 
+bool CrossPointSettings::isValidLockPin(const char* pin) const {
+  if (pin == nullptr) {
+    return false;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (pin[i] < '0' || pin[i] > '9') {
+      return false;
+    }
+  }
+  return pin[4] == '\0';
+}
+
+bool CrossPointSettings::isLockScreenActive() const { return lockEnabled != 0 && lockPin[0] != '\0'; }
+
+bool CrossPointSettings::verifyLockPin(const char* pin) const {
+  if (!isValidLockPin(pin)) {
+    return false;
+  }
+  return strncmp(lockPin, pin, 4) == 0;
+}
+
 int CrossPointSettings::getReaderFontId() const {
   switch (fontFamily) {
     case NOTOSANS:

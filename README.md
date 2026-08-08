@@ -41,6 +41,18 @@ This project is **not affiliated with Xteink**; it's built as a community projec
   - [ ] User provided fonts
   - [ ] Full UTF support
 - [x] Screen rotation
+- [x] Games (Home → Games)
+  - [x] TRETIS (falling-block puzzle)
+  - [x] Sudoku
+  - [x] Cat Run (side-view auto-runner)
+  - [x] High scores with pause/resume via SD saves
+- [x] Lock screen
+  - [x] Optional 4-digit PIN on boot/wake
+  - [x] Custom message line 1 and line 2
+- [x] Performance-focused build for constrained hardware
+  - [x] Size-optimized compile (`-Os`), unused BLE stack removed
+  - [x] Production release logging trimmed (`LOG_LEVEL=0`)
+  - [x] Single framebuffer + SD chapter cache (~380KB RAM)
 
 Multi-language support: Read EPUBs in various languages, including English, Spanish, French, German, Italian, Portuguese, Russian, Ukrainian, Polish, Swedish, Norwegian, [and more](./USER_GUIDE.md#supported-languages).
 
@@ -60,9 +72,34 @@ This firmware includes targeted support for reading Thai EPUBs on constrained ha
 
 These components live in the EPUB engine (`lib/Epub/`), hyphenation (`ThaiWordBreaker`), and renderer (`GfxRenderer`). They are distinct from community forks that add separate Thai UI (for example keyboard layouts); see the acknowledgement below.
 
+## Games
+
+Open **Home → Games** to play:
+
+- **TRETIS** — Falling-block puzzle tuned for e-ink refresh; pause saves progress to the SD card.
+- **Sudoku** — Medium 9×9 puzzles ranked by completion time.
+- **Cat Run** — Side-view auto-runner: jump/duck, collectibles, hazards, and a late-run boss phase.
+- **High Scores** — Shared scoreboard across games; unfinished sessions can be resumed from the Games menu.
+
+## Lock screen
+
+Optional PIN gate shown on boot and wake when enabled:
+
+1. Enable **Lock Screen** in System settings (or via the web settings page).
+2. Open **Lock Screen Setup** to set a 4-digit PIN and optional **message line 1** / **line 2** (shown above the keypad).
+3. Enter the PIN to unlock; **Back** on the lock screen returns the device to deep sleep.
+
+## Performance
+
+This fork keeps the device responsive within the ESP32-C3’s ~380KB usable RAM:
+
+- Compile with size optimization (`-Os`) and drop the unused NimBLE dependency to free flash and heap pressure.
+- Production (`gh_release`) builds use error-only logging (`LOG_LEVEL=0`).
+- Single 48KB framebuffer mode and aggressive SD chapter caching (see [Internals](#internals)) avoid large DRAM allocations during reading.
+
 ## Installing
 
-### Web (latest firmware)
+### Web (latest upstream firmware)
 
 1. Connect your Xteink X4 to your computer via USB-C and wake/unlock the device
 2. Go to https://xteink.dve.al/ and click "Flash CrossPoint firmware"
@@ -70,10 +107,13 @@ These components live in the EPUB engine (`lib/Epub/`), hyphenation (`ThaiWordBr
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap
 back to the other partition using the "Swap boot partition" button here https://xteink.dve.al/debug.
 
-### Web (specific firmware version)
+### Web (this fork — specific firmware version)
+
+Binaries for **this fork** (Thai support, games, lock screen, performance tweaks) are published on the
+[releases page](https://github.com/teerarattanapon/crosspoint-reader/releases).
 
 1. Connect your Xteink X4 to your computer via USB-C
-2. Download the `firmware.bin` file from the release of your choice via the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases)
+2. Download the `firmware.bin` file from the [release](https://github.com/teerarattanapon/crosspoint-reader/releases) you want (for example **1.2.2**)
 3. Go to https://xteink.dve.al/ and flash the firmware file using the "OTA fast flash controls" section
 
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap
@@ -94,10 +134,10 @@ See [Development](#development) below.
 
 ### Checking out the code
 
-CrossPoint uses PlatformIO for building and flashing the firmware. To get started, clone the repository:
+CrossPoint uses PlatformIO for building and flashing the firmware. To get started, clone this repository:
 
 ```
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
+git clone --recursive https://github.com/teerarattanapon/crosspoint-reader
 
 # Or, if you've already cloned without --recursive:
 git submodule update --init --recursive

@@ -5,6 +5,8 @@
 #include <freertos/task.h>
 
 #include <cassert>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,6 +16,7 @@
 
 class Activity;    // forward declaration
 class RenderLock;  // forward declaration
+enum class GameKind : uint8_t;
 
 /**
  * ActivityManager
@@ -82,9 +85,11 @@ class ActivityManager {
   void goToFileBrowser(std::string path = {});
   void goToRecentBooks();
   void goToBrowser();
+  void goToGames();
   void goToReader(std::string path);
   void goToSleep();
-  void goToBoot();
+  void goToBoot(std::function<void()> onContinue = nullptr);
+  void goToLockScreen(std::function<void()> onUnlock);
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goHome();
 
@@ -97,6 +102,8 @@ class ActivityManager {
 
   bool preventAutoSleep() const;
   bool isReaderActivity() const;
+  bool isGameActivity() const;
+  GameKind getGameKind() const;
   bool skipLoopDelay() const;
 
   // If immediate is true, the update will be triggered immediately.

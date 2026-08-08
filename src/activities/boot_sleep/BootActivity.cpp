@@ -30,4 +30,8 @@ void BootActivity::onEnter() {
   //renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 50, tr(STR_BOOT_CREDIT));
   //renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 30, CROSSPOINT_VERSION);
   //renderer.displayBuffer();
+
+  if (onContinue) {
+    onContinue();
+  }
 }

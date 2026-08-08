@@ -9,11 +9,13 @@
 #include "CrossPointSettings.h"
 #include "KOReaderSettingsActivity.h"
 #include "LanguageSelectActivity.h"
+#include "LockScreenSettingsActivity.h"
 #include "MappedInputManager.h"
 #include "OtaUpdateActivity.h"
 #include "SettingsList.h"
 #include "StatusBarSettingsActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "activities/util/PinEntryActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -47,6 +49,7 @@ void SettingsActivity::onEnter() {
   controlsSettings.insert(controlsSettings.begin(),
                           SettingInfo::Action(StrId::STR_REMAP_FRONT_BUTTONS, SettingAction::RemapFrontButtons));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_WIFI_NETWORKS, SettingAction::Network));
+  systemSettings.push_back(SettingInfo::Action(StrId::STR_LOCK_SCREEN_SETUP, SettingAction::LockScreen));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_KOREADER_SYNC, SettingAction::KOReaderSync));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_OPDS_BROWSER, SettingAction::OPDSBrowser));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CLEAR_READING_CACHE, SettingAction::ClearCache));
@@ -155,6 +158,28 @@ void SettingsActivity::toggleCurrentSetting() {
   }
 
   if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
+    if (setting.valuePtr == &CrossPointSettings::lockEnabled) {
+      const bool currentlyEnabled = SETTINGS.lockEnabled != 0;
+      if (currentlyEnabled && SETTINGS.lockPin[0] != '\0') {
+        startActivityForResult(std::make_unique<PinEntryActivity>(renderer, mappedInput, tr(STR_ENTER_CURRENT_PIN)),
+                               [this](const ActivityResult& result) {
+                                 if (result.isCancelled) {
+                                   requestUpdate();
+                                   return;
+                                 }
+                                 const auto& pin = std::get<KeyboardResult>(result.data).text;
+                                 if (!SETTINGS.verifyLockPin(pin.c_str())) {
+                                   requestUpdate();
+                                   return;
+                                 }
+                                 SETTINGS.lockEnabled = 0;
+                                 SETTINGS.saveToFile();
+                                 requestUpdate();
+                               });
+        return;
+      }
+    }
+
     // Toggle the boolean value using the member pointer
     const bool currentValue = SETTINGS.*(setting.valuePtr);
     SETTINGS.*(setting.valuePtr) = !currentValue;
@@ -186,6 +211,9 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::Network:
         startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, false), resultHandler);
+        break;
+      case SettingAction::LockScreen:
+        startActivityForResult(std::make_unique<LockScreenSettingsActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::ClearCache:
         startActivityForResult(std::make_unique<ClearCacheActivity>(renderer, mappedInput), resultHandler);

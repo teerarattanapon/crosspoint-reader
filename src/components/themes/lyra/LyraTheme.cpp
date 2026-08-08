@@ -14,17 +14,21 @@
 #include "components/UITheme.h"
 #include "components/icons/book.h"
 #include "components/icons/book24.h"
+#include "components/icons/catrun.h"
 #include "components/icons/cover.h"
 #include "components/icons/file24.h"
 #include "components/icons/folder.h"
 #include "components/icons/folder24.h"
+#include "components/icons/games.h"
 #include "components/icons/hotspot.h"
 #include "components/icons/image24.h"
 #include "components/icons/library.h"
 #include "components/icons/recent.h"
 #include "components/icons/settings2.h"
+#include "components/icons/sudoku.h"
 #include "components/icons/text24.h"
 #include "components/icons/transfer.h"
+#include "components/icons/tretis.h"
 #include "components/icons/wifi.h"
 #include "fontIds.h"
 
@@ -118,6 +122,14 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return WifiIcon;
       case UIIcon::Hotspot:
         return HotspotIcon;
+      case UIIcon::Games:
+        return GamesIcon;
+      case UIIcon::Tretis:
+        return TretisIcon;
+      case UIIcon::Sudoku:
+        return SudokuIcon;
+      case UIIcon::CatRun:
+        return CatRunIcon;
       default:
         return nullptr;
     }

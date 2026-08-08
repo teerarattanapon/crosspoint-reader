@@ -2,6 +2,7 @@
 #include <Logging.h>
 
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -11,6 +12,8 @@
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
 #include "RenderLock.h"
+
+enum class GameKind : uint8_t { None, Tretis, Sudoku, CatRun };
 
 class Activity {
   friend class ActivityManager;
@@ -43,6 +46,8 @@ class Activity {
   virtual bool skipLoopDelay() { return false; }
   virtual bool preventAutoSleep() { return false; }
   virtual bool isReaderActivity() const { return false; }
+  virtual bool isGameActivity() const { return false; }
+  virtual GameKind getGameKind() const { return GameKind::None; }
 
   // Start a new activity without destroying the current one
   // Note: requestUpdate() will be invoked automatically once resultHandler finishes

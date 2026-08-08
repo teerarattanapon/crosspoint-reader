@@ -6,8 +6,13 @@
 #include "HalDisplay.h"
 
 ConfirmationActivity::ConfirmationActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                           const std::string& heading, const std::string& body)
-    : Activity("Confirmation", renderer, mappedInput), heading(heading), body(body) {}
+                                           const std::string& heading, const std::string& body,
+                                           const std::string& leftLabel, const std::string& rightLabel)
+    : Activity("Confirmation", renderer, mappedInput),
+      heading(heading),
+      body(body),
+      leftLabel(leftLabel),
+      rightLabel(rightLabel) {}
 
 void ConfirmationActivity::onEnter() {
   Activity::onEnter();
@@ -48,8 +53,10 @@ void ConfirmationActivity::render(RenderLock&& lock) {
     renderer.drawCenteredText(fontId, currentY, safeBody.c_str(), true, EpdFontFamily::REGULAR);
   }
 
-  // Draw UI Elements
-  const auto labels = mappedInput.mapLabels("", "", I18N.get(StrId::STR_CANCEL), I18N.get(StrId::STR_CONFIRM));
+  // Draw UI Elements — empty custom labels fall back to Cancel / Confirm
+  const char* left = leftLabel.empty() ? I18N.get(StrId::STR_CANCEL) : leftLabel.c_str();
+  const char* right = rightLabel.empty() ? I18N.get(StrId::STR_CONFIRM) : rightLabel.c_str();
+  const auto labels = mappedInput.mapLabels("", "", left, right);
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   renderer.displayBuffer(HalDisplay::RefreshMode::FAST_REFRESH);

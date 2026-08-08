@@ -553,7 +553,25 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                                   SETTINGS.imageRendering)) {
       LOG_DBG("ERS", "Cache not found, building...");
 
-      const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
+      Rect popupRect;
+      bool popupShown = false;
+      const auto popupFn = [this, &popupRect, &popupShown](int percent) {
+        // Already inside render() with the RenderLock held (it's a parameter of this
+        // function) — drawPopup/fillPopupProgress flush to the display synchronously
+        // on their own. No requestUpdate() needed: the page render that follows below
+        // (once createSectionFile() returns) naturally overdraws this popup in the
+        // same render() call, and requestUpdate() here would only queue a redundant
+        // extra render pass after this one already finished.
+        if (!popupShown) {
+          popupShown = true;
+          // Clear first: the previous activity (e.g. ReaderActivity's "Opening book"
+          // popup) may have left content in the shared framebuffer, and this popup's
+          // box is not guaranteed to be as large as whatever was drawn before it.
+          renderer.clearScreen();
+          popupRect = GUI.drawPopup(renderer, tr(STR_INDEXING));
+        }
+        GUI.fillPopupProgress(renderer, popupRect, percent);
+      };
 
       if (!section->createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                       SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth,

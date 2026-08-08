@@ -20,7 +20,7 @@
 #include "fontIds.h"
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // File Browser, Recents, File transfer, Settings
+  int count = 5;  // File Browser, Recents, File transfer, Games, Settings
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -115,6 +115,7 @@ void HomeActivity::onEnter() {
 
   selectorIndex = 0;
   lyraCarouselFocus = 0;
+  ignoreConfirmRelease = true;
 
   const auto& metrics = UITheme::getInstance().getMetrics();
   loadRecentBooks(metrics.homeRecentBooksCount);
@@ -230,6 +231,10 @@ void HomeActivity::loop() {
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    if (ignoreConfirmRelease) {
+      ignoreConfirmRelease = false;
+      return;
+    }
     // Calculate dynamic indices based on which options are available
     int idx = 0;
     int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
@@ -237,6 +242,7 @@ void HomeActivity::loop() {
     const int recentsIdx = idx++;
     const int opdsLibraryIdx = hasOpdsUrl ? idx++ : -1;
     const int fileTransferIdx = idx++;
+    const int gamesIdx = idx++;
     const int settingsIdx = idx;
 
     if (selectorIndex < recentBooks.size()) {
@@ -249,9 +255,14 @@ void HomeActivity::loop() {
       onOpdsBrowserOpen();
     } else if (menuSelectedIndex == fileTransferIdx) {
       onFileTransferOpen();
+    } else if (menuSelectedIndex == gamesIdx) {
+      onGamesOpen();
     } else if (menuSelectedIndex == settingsIdx) {
       onSettingsOpen();
     }
+  } else if (ignoreConfirmRelease && !mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
+    // No queued release — clear the guard once Confirm is idle.
+    ignoreConfirmRelease = false;
   }
 }
 
@@ -277,11 +288,11 @@ void HomeActivity::render(RenderLock&&) {
 
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),
-                                        tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Folder, Recent, Transfer, Settings};
+                                        tr(STR_GAMES), tr(STR_SETTINGS_TITLE)};
+  std::vector<UIIcon> menuIcons = {Folder, Recent, Transfer, Games, Settings};
 
   if (hasOpdsUrl) {
-    // Insert OPDS Browser after File Browser
+    // Insert OPDS Browser after Recent Books
     menuItems.insert(menuItems.begin() + 2, tr(STR_OPDS_BROWSER));
     menuIcons.insert(menuIcons.begin() + 2, Library);
   }
@@ -295,7 +306,11 @@ void HomeActivity::render(RenderLock&&) {
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
 
-  const auto labels = mappedInput.mapLabels("", tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  // While focus is on the cover carousel, Left/Right move the selection horizontally;
+  // once focus moves into the menu below, the same buttons step through it vertically.
+  const bool onCarousel = selectorIndex < static_cast<int>(recentBooks.size());
+  const auto labels = mappedInput.mapLabels("", tr(STR_SELECT), onCarousel ? tr(STR_DIR_LEFT) : tr(STR_DIR_UP),
+                                            onCarousel ? tr(STR_DIR_RIGHT) : tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   renderer.displayBuffer();
@@ -320,3 +335,5 @@ void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
 void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
+
+void HomeActivity::onGamesOpen() { activityManager.goToGames(); }
