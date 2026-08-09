@@ -139,7 +139,7 @@ Binaries for **this fork** (Thai support, CatPose theme, games, lock screen, on-
 [releases page](https://github.com/teerarattanapon/crosspoint-reader/releases).
 
 1. Connect your Xteink X4 to your computer via USB-C
-2. Download the `firmware.bin` file from the [release](https://github.com/teerarattanapon/crosspoint-reader/releases) you want (for example **1.2.4**)
+2. Download the `firmware.bin` file from the [release](https://github.com/teerarattanapon/crosspoint-reader/releases) you want (for example **1.2.5**)
 3. Go to https://xteink.dve.al/ and flash the firmware file using the "OTA fast flash controls" section
 
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap

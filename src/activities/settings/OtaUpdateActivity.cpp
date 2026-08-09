@@ -127,10 +127,8 @@ void OtaUpdateActivity::render(RenderLock&&) {
         Rect{metrics.contentSidePadding, y, pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
         static_cast<int>(updaterProgress * 100), 100);
 
-    y += metrics.progressBarHeight + metrics.verticalSpacing;
-    renderer.drawCenteredText(UI_10_FONT_ID, y,
-                              (std::to_string(static_cast<int>(updaterProgress * 100)) + "%").c_str());
-    y += height + metrics.verticalSpacing;
+    // Percent is drawn by drawProgressBar at rect.y + rect.height + 15
+    y += metrics.progressBarHeight + 15 + height + metrics.verticalSpacing;
     renderer.drawCenteredText(
         UI_10_FONT_ID, y,
         (std::to_string(updater.getProcessedSize()) + " / " + std::to_string(updater.getTotalSize())).c_str());
