@@ -37,6 +37,8 @@ void TxtReaderActivity::onEnter() {
   auto filePath = txt->getPath();
   auto fileName = filePath.substr(filePath.rfind('/') + 1);
   APP_STATE.openEpubPath = filePath;
+  // Successful load: clear crash-guard so a later sleep-from-reader can resume.
+  APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(filePath, fileName, "", "");
 
@@ -53,6 +55,7 @@ void TxtReaderActivity::onExit() {
   pageOffsets.clear();
   currentPageLines.clear();
   APP_STATE.readerActivityLoadCount = 0;
+  APP_STATE.lastSleepFromReader = false;
   APP_STATE.saveToFile();
   txt.reset();
 }
@@ -407,6 +410,9 @@ void TxtReaderActivity::saveProgress() const {
     f.write(data, 4);
     f.close();
   }
+  const int percent = totalPages > 0 ? ((currentPage + 1) * 100) / totalPages : 0;
+  const uint8_t clamped = static_cast<uint8_t>(percent < 0 ? 0 : (percent > 100 ? 100 : percent));
+  RECENT_BOOKS.updateProgress(txt->getPath(), clamped);
 }
 
 void TxtReaderActivity::loadProgress() {

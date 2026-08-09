@@ -36,11 +36,17 @@ This project is **not affiliated with Xteink**; it's built as a community projec
   - [x] Cover sleep screen
 - [x] Wifi book upload
 - [x] Wifi OTA updates
+  - [x] Settings → System → Check for updates
+  - [x] Download progress and auto-reboot after install
+  - [x] Installs latest `firmware.bin` from this fork’s releases
 - [x] KOReader Sync integration for cross-device reading progress
 - [x] Configurable font, layout, and display options
   - [ ] User provided fonts
   - [ ] Full UTF support
 - [x] Screen rotation
+- [x] UI themes (Settings → Display → UI Theme)
+  - [x] Classic, Lyra, Lyra Extended
+  - [x] CatPose (welcome header, recent cover strip, 2×2 home menu; default on fresh install)
 - [x] Games (Home → Games)
   - [x] TRETIS (falling-block puzzle)
   - [x] Sudoku
@@ -50,7 +56,7 @@ This project is **not affiliated with Xteink**; it's built as a community projec
   - [x] Optional 4-digit PIN on boot/wake
   - [x] Custom message line 1 and line 2
 - [x] Performance-focused build for constrained hardware
-  - [x] Size-optimized compile (`-Os`), unused BLE stack removed
+  - [x] Size-optimized compile (`-Os`)
   - [x] Production release logging trimmed (`LOG_LEVEL=0`)
   - [x] Single framebuffer + SD chapter cache (~380KB RAM)
 
@@ -72,14 +78,22 @@ This firmware includes targeted support for reading Thai EPUBs on constrained ha
 
 These components live in the EPUB engine (`lib/Epub/`), hyphenation (`ThaiWordBreaker`), and renderer (`GfxRenderer`). They are distinct from community forks that add separate Thai UI (for example keyboard layouts); see the acknowledgement below.
 
+## CatPose theme
+
+**CatPose** is the default home UI on a fresh install (change anytime under **Settings → Display → UI Theme**):
+
+- Welcome header with battery and time
+- Horizontal recent-book cover strip (focus cover larger; **View All** opens the file browser)
+- Compact 2×2 menu cards: Browse, Transfer File, Games, Settings
+
 ## Games
 
 Open **Home → Games** to play:
 
 - **TRETIS** — Falling-block puzzle tuned for e-ink refresh; pause saves progress to the SD card.
 - **Sudoku** — Medium 9×9 puzzles ranked by completion time.
-- **Cat Run** — Side-view auto-runner: jump/duck, collectibles, hazards, and a late-run boss phase.
-- **High Scores** — Shared scoreboard across games; unfinished sessions can be resumed from the Games menu.
+- **Cat Run** — Side-view auto-runner: pick a cat color, then jump/duck through collectibles, hazards, and a late-run boss phase.
+- **High Scores** — Shared scoreboard across games; unfinished sessions can be resumed from the Games menu (SD saves).
 
 ## Lock screen
 
@@ -93,9 +107,21 @@ Optional PIN gate shown on boot and wake when enabled:
 
 This fork keeps the device responsive within the ESP32-C3’s ~380KB usable RAM:
 
-- Compile with size optimization (`-Os`) and drop the unused NimBLE dependency to free flash and heap pressure.
+- Compile with size optimization (`-Os`) for a smaller firmware footprint.
 - Production (`gh_release`) builds use error-only logging (`LOG_LEVEL=0`).
-- Single 48KB framebuffer mode and aggressive SD chapter caching (see [Internals](#internals)) avoid large DRAM allocations during reading.
+- Single 48KB framebuffer mode (`EINK_DISPLAY_SINGLE_BUFFER_MODE`) and aggressive SD chapter caching (see [Internals](#internals)) avoid large DRAM allocations during reading.
+
+## OTA updates
+
+Update on the device over WiFi (no USB required):
+
+1. Open **Settings → System → Check for updates**.
+2. Connect to WiFi; the device compares the current version to the latest [GitHub release](https://github.com/teerarattanapon/crosspoint-reader/releases) for this fork.
+3. Confirm to download `firmware.bin` (progress is shown), validate the image, then auto-reboot after about 10 seconds.
+
+RC builds (`*-rc`) can update to the matching stable release when that tag is the latest on GitHub.
+
+For USB/web flashing instead, see [Installing](#installing) below.
 
 ## Installing
 
@@ -109,11 +135,11 @@ back to the other partition using the "Swap boot partition" button here https://
 
 ### Web (this fork — specific firmware version)
 
-Binaries for **this fork** (Thai support, games, lock screen, performance tweaks) are published on the
+Binaries for **this fork** (Thai support, CatPose theme, games, lock screen, on-device OTA, performance tweaks) are published on the
 [releases page](https://github.com/teerarattanapon/crosspoint-reader/releases).
 
 1. Connect your Xteink X4 to your computer via USB-C
-2. Download the `firmware.bin` file from the [release](https://github.com/teerarattanapon/crosspoint-reader/releases) you want (for example **1.2.3**)
+2. Download the `firmware.bin` file from the [release](https://github.com/teerarattanapon/crosspoint-reader/releases) you want (for example **1.2.4**)
 3. Go to https://xteink.dve.al/ and flash the firmware file using the "OTA fast flash controls" section
 
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap

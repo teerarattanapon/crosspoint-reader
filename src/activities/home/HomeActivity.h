@@ -12,17 +12,18 @@ struct Rect;
 class HomeActivity final : public Activity {
   ButtonNavigator buttonNavigator;
   int selectorIndex = 0;
-  /// Last focused recent-book index on Lyra Extended (carousel) when the menu row is active.
-  int lyraCarouselFocus = 0;
+  /// Last focused recent-book index on carousel themes when View All / menu is active.
+  int carouselFocus = 0;
   bool recentsLoading = false;
   bool recentsLoaded = false;
   bool firstRenderDone = false;
   bool hasOpdsUrl = false;
-  bool coverRendered = false;      // Track if cover has been rendered once
-  bool coverBufferStored = false;  // Track if cover buffer is stored
-  bool ignoreConfirmRelease = true;  // Swallow Confirm release inherited from prior screen (e.g. lock PIN)
-  uint8_t* coverBuffer = nullptr;  // HomeActivity's own buffer for cover image
+  bool coverRendered = false;
+  bool coverBufferStored = false;
+  bool ignoreConfirmRelease = true;
+  uint8_t* coverBuffer = nullptr;
   std::vector<RecentBook> recentBooks;
+
   void onSelectBook(const std::string& path);
   void onFileBrowserOpen();
   void onRecentsOpen();
@@ -31,10 +32,18 @@ class HomeActivity final : public Activity {
   void onOpdsBrowserOpen();
   void onGamesOpen();
 
+  bool isCatPose() const;
+  bool isLyra3() const;
+  bool isCarouselTheme() const;
   int getMenuItemCount() const;
-  bool storeCoverBuffer();    // Store frame buffer for cover image
-  bool restoreCoverBuffer();  // Restore frame buffer from stored cover
-  void freeCoverBuffer();     // Free the stored cover buffer
+  int getCatPoseViewAllIndex() const;
+  int getCatPoseMenuStart() const;
+  int getCatPoseMenuCount() const;
+  void backfillProgressIfNeeded(RecentBook& book);
+
+  bool storeCoverBuffer();
+  bool restoreCoverBuffer();
+  void freeCoverBuffer();
   void loadRecentBooks(int maxBooks);
   void loadRecentCovers(int coverHeight);
 

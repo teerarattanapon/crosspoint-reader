@@ -539,7 +539,8 @@ void LyraTheme::drawEmptyRecents(const GfxRenderer& renderer, const Rect rect) c
 
 void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                                const std::function<std::string(int index)>& buttonLabel,
-                               const std::function<UIIcon(int index)>& rowIcon) const {
+                               const std::function<UIIcon(int index)>& rowIcon,
+                               const std::function<std::string(int index)>& /*buttonSubtitle*/) const {
   for (int i = 0; i < buttonCount; ++i) {
     int tileWidth = rect.width - LyraMetrics::values.contentSidePadding * 2;
     Rect tileRect = Rect{rect.x + LyraMetrics::values.contentSidePadding,

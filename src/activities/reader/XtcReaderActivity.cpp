@@ -39,6 +39,8 @@ void XtcReaderActivity::onEnter() {
 
   // Save current XTC as last opened book and add to recent books
   APP_STATE.openEpubPath = xtc->getPath();
+  // Successful load: clear crash-guard so a later sleep-from-reader can resume.
+  APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(xtc->getPath(), xtc->getTitle(), xtc->getAuthor(), xtc->getThumbBmpPath());
 
@@ -50,6 +52,7 @@ void XtcReaderActivity::onExit() {
   Activity::onExit();
 
   APP_STATE.readerActivityLoadCount = 0;
+  APP_STATE.lastSleepFromReader = false;
   APP_STATE.saveToFile();
   xtc.reset();
 }
@@ -337,6 +340,7 @@ void XtcReaderActivity::saveProgress() const {
     f.write(data, 4);
     f.close();
   }
+  RECENT_BOOKS.updateProgress(xtc->getPath(), xtc->calculateProgress(currentPage));
 }
 
 void XtcReaderActivity::loadProgress() {

@@ -83,6 +83,8 @@ void EpubReaderActivity::onEnter() {
 
   // Save current epub as last opened epub and add to recent books
   APP_STATE.openEpubPath = epub->getPath();
+  // Successful load: clear crash-guard so a later sleep-from-reader can resume.
+  APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
 
@@ -97,6 +99,7 @@ void EpubReaderActivity::onExit() {
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   APP_STATE.readerActivityLoadCount = 0;
+  APP_STATE.lastSleepFromReader = false;
   APP_STATE.saveToFile();
   section.reset();
   epub.reset();
@@ -719,6 +722,11 @@ void EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   } else {
     LOG_ERR("ERS", "Could not save progress!");
   }
+
+  const float chapterProg = (pageCount > 0) ? (static_cast<float>(currentPage) / static_cast<float>(pageCount)) : 0.0f;
+  const int percent = static_cast<int>(epub->calculateProgress(spineIndex, chapterProg) * 100.0f + 0.5f);
+  const uint8_t clamped = static_cast<uint8_t>(percent < 0 ? 0 : (percent > 100 ? 100 : percent));
+  RECENT_BOOKS.updateProgress(epub->getPath(), clamped);
 }
 void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int orientedMarginTop,
                                         const int orientedMarginRight, const int orientedMarginBottom,

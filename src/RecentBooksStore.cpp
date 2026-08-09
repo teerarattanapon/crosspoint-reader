@@ -20,16 +20,20 @@ constexpr char RECENT_BOOKS_FILE_BAK[] = "/.crosspoint/recent.bin.bak";
 RecentBooksStore RecentBooksStore::instance;
 
 void RecentBooksStore::addBook(const std::string& path, const std::string& title, const std::string& author,
-                               const std::string& coverBmpPath) {
-  // Remove existing entry if present
+                               const std::string& coverBmpPath, uint8_t progressPercent) {
+  // Remove existing entry if present (preserve progress if caller passed 0)
+  uint8_t preservedProgress = progressPercent;
   auto it =
       std::find_if(recentBooks.begin(), recentBooks.end(), [&](const RecentBook& book) { return book.path == path; });
   if (it != recentBooks.end()) {
+    if (progressPercent == 0 && it->progressPercent > 0) {
+      preservedProgress = it->progressPercent;
+    }
     recentBooks.erase(it);
   }
 
   // Add to front
-  recentBooks.insert(recentBooks.begin(), {path, title, author, coverBmpPath});
+  recentBooks.insert(recentBooks.begin(), {path, title, author, coverBmpPath, preservedProgress});
 
   // Trim to max size
   if (recentBooks.size() > static_cast<size_t>(MAX_RECENT_BOOKS)) {
@@ -50,6 +54,19 @@ void RecentBooksStore::updateBook(const std::string& path, const std::string& ti
     book.coverBmpPath = coverBmpPath;
     saveToFile();
   }
+}
+
+void RecentBooksStore::updateProgress(const std::string& path, uint8_t progressPercent) {
+  auto it =
+      std::find_if(recentBooks.begin(), recentBooks.end(), [&](const RecentBook& book) { return book.path == path; });
+  if (it == recentBooks.end()) {
+    return;
+  }
+  if (it->progressPercent == progressPercent) {
+    return;
+  }
+  it->progressPercent = progressPercent;
+  saveToFile();
 }
 
 bool RecentBooksStore::saveToFile() const {

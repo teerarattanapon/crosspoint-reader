@@ -160,14 +160,21 @@ void waitForPowerRelease() {
 // Enter deep sleep mode
 void enterDeepSleep() {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
-  APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
-  APP_STATE.lastSleepFromGame = activityManager.isGameActivity();
-  // Flag before goToSleep(): game activity onExit() writes the board during the replace.
+  // Capture before goToSleep(): reader onExit() clears lastSleepFromReader; game onExit() writes the board.
+  const bool fromReader = activityManager.isReaderActivity();
+  const bool fromGame = activityManager.isGameActivity();
+  const GameKind gameKind = activityManager.getGameKind();
+
+  activityManager.goToSleep();
+
+  // Re-apply after goToSleep() so reader onExit() cannot wipe the sleep-from-reader flag.
+  APP_STATE.lastSleepFromReader = fromReader;
+  APP_STATE.lastSleepFromGame = fromGame;
   APP_STATE.autoResumeTretis = false;
   APP_STATE.autoResumeSudoku = false;
   APP_STATE.autoResumeCatRun = false;
-  if (APP_STATE.lastSleepFromGame) {
-    switch (activityManager.getGameKind()) {
+  if (fromGame) {
+    switch (gameKind) {
       case GameKind::Tretis:
         APP_STATE.autoResumeTretis = true;
         break;
@@ -182,8 +189,6 @@ void enterDeepSleep() {
     }
   }
   APP_STATE.saveToFile();
-
-  activityManager.goToSleep();
 
   display.deepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
@@ -353,6 +358,7 @@ void setup() {
     if (resumeToReader) {
       APP_STATE.openEpubPath = "";
       APP_STATE.readerActivityLoadCount++;
+      APP_STATE.lastSleepFromReader = false;
       APP_STATE.lastSleepFromGame = false;
       APP_STATE.autoResumeTretis = false;
       APP_STATE.autoResumeSudoku = false;
@@ -360,11 +366,13 @@ void setup() {
       APP_STATE.saveToFile();
       activityManager.goToReader(readerPath);
     } else if (resumeToGame) {
+      APP_STATE.lastSleepFromReader = false;
       APP_STATE.lastSleepFromGame = false;
       // autoResume* flags stay true so GamesMenu opens the matching resume prompt.
       APP_STATE.saveToFile();
       activityManager.goToGames();
     } else {
+      APP_STATE.lastSleepFromReader = false;
       APP_STATE.lastSleepFromGame = false;
       APP_STATE.autoResumeTretis = false;
       APP_STATE.autoResumeSudoku = false;
